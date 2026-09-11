@@ -39,6 +39,13 @@ public final class AppState {
         self.storage = storage
         let savedThemeRaw = UserDefaults.standard.string(forKey: "WritoThemeMode") ?? ThemeMode.system.rawValue
         self.themeMode = ThemeMode(rawValue: savedThemeRaw) ?? .system
+        if UserDefaults.standard.bool(forKey: "WritoTypewriterMode") {
+            self.isTypewriterMode = true
+            self.isSidebarVisible = false
+        }
+        if let query = UserDefaults.standard.string(forKey: "WritoSearchQuery"), !query.isEmpty {
+            self.searchQuery = query
+        }
         loadAllNotes()
         selectInitialNote()
         applyThemeAppearance()

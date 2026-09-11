@@ -16,7 +16,12 @@
 </p>
 
 <p align="center">
-  <img src="assets/writo_preview.png" width="88%" alt="Writo Preview" />
+  <img src="assets/writo_dark.png" width="49%" alt="Writo Dark Mode" />
+  <img src="assets/writo_light.png" width="49%" alt="Writo Light Mode" />
+</p>
+<p align="center">
+  <img src="assets/writo_typewriter.png" width="49%" alt="Typewriter Focus Mode" />
+  <img src="assets/writo_search.png" width="49%" alt="Quick Search & Filter" />
 </p>
 
 *Strictly 3 colors. Zero friction. Pure typographical geometry.*
