@@ -44,6 +44,9 @@ struct WritoApp: App {
                 .frame(minWidth: 680, minHeight: 440)
                 .background(MonocleTheme.background)
                 .preferredColorScheme(state.themeMode.colorScheme)
+                .onReceive(DistributedNotificationCenter.default().publisher(for: Notification.Name("family.o.saveAll"))) { _ in
+                    state.saveToiCloud()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 960, height: 600)
