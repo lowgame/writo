@@ -3,6 +3,8 @@ import SwiftUI
 public struct SidebarView: View {
     @Bindable var state: AppState
     @FocusState private var isSearchFocused: Bool
+    @State private var isSettingsOpen = false
+    @ObservedObject private var launchManager = LaunchAtLoginManager.shared
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -83,6 +85,54 @@ public struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Tema: \(state.themeMode.title) (⌘D)")
+
+                Button(action: { isSettingsOpen.toggle() }) {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 11.5, weight: .regular))
+                        .foregroundStyle(isSettingsOpen ? MonocleTheme.foreground : MonocleTheme.neutral)
+                        .padding(.vertical, 2)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $isSettingsOpen, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Button(action: {
+                            launchManager.toggle()
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: launchManager.isEnabled ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(MonocleTheme.foreground)
+                                Text("Başlangıçta Aç")
+                                    .font(MonocleTheme.charterFont(size: 12))
+                                    .foregroundStyle(MonocleTheme.foreground)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        Divider()
+                            .background(MonocleTheme.microBorder)
+
+                        Button(action: {
+                            state.saveToiCloud()
+                            isSettingsOpen = false
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "icloud.and.arrow.up")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(MonocleTheme.foreground)
+                                Text("iCloud'a Kaydet")
+                                    .font(MonocleTheme.charterFont(size: 12))
+                                    .foregroundStyle(MonocleTheme.foreground)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(12)
+                    .frame(width: 170)
+                    .background(MonocleTheme.background)
+                }
+                .help("Ayarlar")
 
                 Spacer()
 

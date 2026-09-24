@@ -26,8 +26,4 @@ cp "Resources/AppIcon.png" "$APP_BUNDLE/Contents/Resources/AppIcon.png"
 echo "=== [3/3] İmzalanıyor: Ad-hoc Codesign ==="
 codesign --force --deep --sign - "$APP_BUNDLE"
 
-# Also sync to root Writo.app for local development
-rm -rf Writo.app
-cp -R "$APP_BUNDLE" Writo.app
-
 echo "Tamamlandı: $APP_BUNDLE başarıyla oluşturuldu!"

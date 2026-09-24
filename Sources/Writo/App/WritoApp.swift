@@ -55,6 +55,13 @@ struct WritoApp: App {
                 .keyboardShortcut("n", modifiers: .command)
             }
 
+            CommandGroup(replacing: .saveItem) {
+                Button("iCloud'a Kaydet") {
+                    state.saveToiCloud()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+            }
+
             CommandGroup(replacing: .undoRedo) {
                 Button("Geri Al") {
                     NSApp.sendAction(Selector(("undo:")), to: nil, from: nil)
@@ -142,6 +149,24 @@ struct WritoApp: App {
                             }
                         }
                     }
+                }
+            }
+
+            CommandMenu("Ayarlar") {
+                Button(action: {
+                    LaunchAtLoginManager.shared.toggle()
+                }) {
+                    HStack {
+                        Text("Başlangıçta Aç")
+                        if LaunchAtLoginManager.shared.isEnabled {
+                            Spacer()
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Button("iCloud'a Kaydet") {
+                    state.saveToiCloud()
                 }
             }
         }

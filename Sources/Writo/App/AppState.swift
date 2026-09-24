@@ -14,6 +14,7 @@ public final class AppState {
     public var isSearchFocused: Bool = false
     public var isTypewriterMode: Bool = false
     public var scrollPercentage: Int = 0
+    public var isSavedToCloudOverlayVisible: Bool = false
 
     // MARK: - Theme Mode
     private let themeModeKey = "WritoThemeMode"
@@ -222,6 +223,22 @@ public final class AppState {
             }
         }
         notes.sort { $0.createdAt > $1.createdAt }
+    }
+
+    public func saveToiCloud() {
+        flushSave()
+        storage.saveAllToCloud(notes: notes, archivedNotes: archivedNotes)
+        withAnimation(.easeOut(duration: 0.15)) {
+            isSavedToCloudOverlayVisible = true
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 850_000_000)
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.2)) {
+                    self.isSavedToCloudOverlayVisible = false
+                }
+            }
+        }
     }
 
     public func renameActiveNote(to newName: String) {

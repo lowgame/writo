@@ -7,8 +7,10 @@ public final class NoteStorage: @unchecked Sendable {
     public private(set) var vaultURL: URL
     public private(set) var archiveURL: URL
     private var customFilenames: Set<String> = []
+    public let isCustomVault: Bool
 
     public init(customVaultURL: URL? = nil) {
+        self.isCustomVault = (customVaultURL != nil)
         if let custom = customVaultURL {
             self.vaultURL = custom
         } else {
@@ -51,6 +53,72 @@ public final class NoteStorage: @unchecked Sendable {
         try? fileManager.createDirectory(at: archiveURL, withIntermediateDirectories: true)
     }
 
+    private var isRunningTests: Bool {
+        isCustomVault || NSClassFromString("XCTestCase") != nil || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    public var iCloudVaultURL: URL? {
+        guard !isRunningTests else { return nil }
+        let home = fileManager.homeDirectoryForCurrentUser
+        let cloudContainer = home.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+        if fileManager.fileExists(atPath: cloudContainer.path) {
+            let cloudWrito = cloudContainer.appendingPathComponent("writo", isDirectory: true)
+            if !fileManager.fileExists(atPath: cloudWrito.path) {
+                try? fileManager.createDirectory(at: cloudWrito, withIntermediateDirectories: true)
+            }
+            return cloudWrito
+        }
+        return nil
+    }
+
+    public var iCloudArchiveURL: URL? {
+        guard let cloudVault = iCloudVaultURL else { return nil }
+        let cloudArchive = cloudVault.appendingPathComponent(".archive", isDirectory: true)
+        if !fileManager.fileExists(atPath: cloudArchive.path) {
+            try? fileManager.createDirectory(at: cloudArchive, withIntermediateDirectories: true)
+        }
+        return cloudArchive
+    }
+
+    public func syncWithCloud(isArchived: Bool) {
+        let localDir = isArchived ? archiveURL : vaultURL
+        guard let cloudDir = isArchived ? iCloudArchiveURL : iCloudVaultURL else { return }
+
+        // 1. Sync from iCloud to Local
+        if let cloudFiles = try? fileManager.contentsOfDirectory(at: cloudDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) {
+            for cloudFile in cloudFiles where cloudFile.pathExtension.lowercased() == "md" {
+                let localFile = localDir.appendingPathComponent(cloudFile.lastPathComponent)
+                if !fileManager.fileExists(atPath: localFile.path) {
+                    try? fileManager.copyItem(at: cloudFile, to: localFile)
+                } else {
+                    let cloudMod = (try? cloudFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    let localMod = (try? localFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    if cloudMod > localMod {
+                        try? fileManager.removeItem(at: localFile)
+                        try? fileManager.copyItem(at: cloudFile, to: localFile)
+                    }
+                }
+            }
+        }
+
+        // 2. Sync from Local to iCloud
+        if let localFiles = try? fileManager.contentsOfDirectory(at: localDir, includingPropertiesForKeys: [.contentModificationDateKey], options: [.skipsHiddenFiles]) {
+            for localFile in localFiles where localFile.pathExtension.lowercased() == "md" {
+                let cloudFile = cloudDir.appendingPathComponent(localFile.lastPathComponent)
+                if !fileManager.fileExists(atPath: cloudFile.path) {
+                    try? fileManager.copyItem(at: localFile, to: cloudFile)
+                } else {
+                    let localMod = (try? localFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    let cloudMod = (try? cloudFile.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                    if localMod > cloudMod {
+                        try? fileManager.removeItem(at: cloudFile)
+                        try? fileManager.copyItem(at: localFile, to: cloudFile)
+                    }
+                }
+            }
+        }
+    }
+
     private func migrateFromLegacyVaultIfNeeded() {
         guard let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let legacyVault = docs.appendingPathComponent("Writo", isDirectory: true)
@@ -77,11 +145,13 @@ public final class NoteStorage: @unchecked Sendable {
 
     // MARK: - Read Notes
     public func loadActiveNotes() -> [Note] {
-        loadNotes(from: vaultURL, isArchived: false)
+        syncWithCloud(isArchived: false)
+        return loadNotes(from: vaultURL, isArchived: false)
     }
 
     public func loadArchivedNotes() -> [Note] {
-        loadNotes(from: archiveURL, isArchived: true)
+        syncWithCloud(isArchived: true)
+        return loadNotes(from: archiveURL, isArchived: true)
     }
 
     private func loadNotes(from directory: URL, isArchived: Bool) -> [Note] {
@@ -157,6 +227,16 @@ public final class NoteStorage: @unchecked Sendable {
             }
         }
 
+        if let cloudTargetDir = (note.isArchived ? iCloudArchiveURL : iCloudVaultURL)?.standardizedFileURL {
+            let oldCloudURL = cloudTargetDir.appendingPathComponent(note.filename).standardizedFileURL
+            let newCloudURL = cloudTargetDir.appendingPathComponent(sanitized).standardizedFileURL
+            if oldCloudURL != newCloudURL && fileManager.fileExists(atPath: oldCloudURL.path) {
+                if !fileManager.fileExists(atPath: newCloudURL.path) {
+                    try? fileManager.moveItem(at: oldCloudURL, to: newCloudURL)
+                }
+            }
+        }
+
         customFilenames.remove(note.filename)
         customFilenames.insert(sanitized)
         saveCustomFilenames()
@@ -203,6 +283,11 @@ public final class NoteStorage: @unchecked Sendable {
         try updatedNote.content.write(to: finalURL, atomically: true, encoding: .utf8)
         updatedNote.updatedAt = Date()
 
+        if let cloudTargetDir = note.isArchived ? iCloudArchiveURL : iCloudVaultURL {
+            let cloudURL = cloudTargetDir.appendingPathComponent(updatedNote.filename)
+            try? updatedNote.content.write(to: cloudURL, atomically: false, encoding: .utf8)
+        }
+
         return updatedNote
     }
 
@@ -221,6 +306,17 @@ public final class NoteStorage: @unchecked Sendable {
             try fileManager.moveItem(at: sourceURL, to: destURL)
         }
 
+        if let cloudVault = iCloudVaultURL, let cloudArchive = iCloudArchiveURL {
+            let cloudSrc = cloudVault.appendingPathComponent(note.filename)
+            let cloudDst = cloudArchive.appendingPathComponent(note.filename)
+            if fileManager.fileExists(atPath: cloudSrc.path) {
+                if fileManager.fileExists(atPath: cloudDst.path) {
+                    try? fileManager.removeItem(at: cloudDst)
+                }
+                try? fileManager.moveItem(at: cloudSrc, to: cloudDst)
+            }
+        }
+
         var archivedNote = note
         archivedNote.isArchived = true
         archivedNote.updatedAt = Date()
@@ -234,23 +330,32 @@ public final class NoteStorage: @unchecked Sendable {
         let sourceURL = archiveURL.appendingPathComponent(note.filename)
         let destURL = vaultURL.appendingPathComponent(note.filename)
 
+        var finalFilename = note.filename
+
         if fileManager.fileExists(atPath: sourceURL.path) {
             if fileManager.fileExists(atPath: destURL.path) {
                 // If a new note with same name was created, resolve by prefixing timestamp
                 let backupName = "\(Int(Date().timeIntervalSince1970))-\(note.filename)"
+                finalFilename = backupName
                 let altURL = vaultURL.appendingPathComponent(backupName)
                 try fileManager.moveItem(at: sourceURL, to: altURL)
-                var restored = note
-                restored.filename = backupName
-                restored.isArchived = false
-                restored.updatedAt = Date()
-                return restored
             } else {
                 try fileManager.moveItem(at: sourceURL, to: destURL)
             }
         }
 
+        if let cloudVault = iCloudVaultURL, let cloudArchive = iCloudArchiveURL {
+            let cloudSrc = cloudArchive.appendingPathComponent(note.filename)
+            let cloudDst = cloudVault.appendingPathComponent(finalFilename)
+            if fileManager.fileExists(atPath: cloudSrc.path) {
+                if !fileManager.fileExists(atPath: cloudDst.path) {
+                    try? fileManager.moveItem(at: cloudSrc, to: cloudDst)
+                }
+            }
+        }
+
         var restoredNote = note
+        restoredNote.filename = finalFilename
         restoredNote.isArchived = false
         restoredNote.updatedAt = Date()
         return restoredNote
@@ -264,7 +369,26 @@ public final class NoteStorage: @unchecked Sendable {
         if fileManager.fileExists(atPath: fileURL.path) {
             try fileManager.removeItem(at: fileURL)
         }
+
+        if let cloudTargetDir = note.isArchived ? iCloudArchiveURL : iCloudVaultURL {
+            let cloudFileURL = cloudTargetDir.appendingPathComponent(note.filename)
+            if fileManager.fileExists(atPath: cloudFileURL.path) {
+                try? fileManager.removeItem(at: cloudFileURL)
+            }
+        }
+
         customFilenames.remove(note.filename)
         saveCustomFilenames()
+    }
+
+    public func saveAllToCloud(notes: [Note], archivedNotes: [Note]) {
+        for note in notes {
+            _ = try? saveNote(note)
+        }
+        for note in archivedNotes {
+            _ = try? saveNote(note)
+        }
+        syncWithCloud(isArchived: false)
+        syncWithCloud(isArchived: true)
     }
 }
